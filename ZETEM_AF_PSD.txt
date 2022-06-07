@@ -1,0 +1,1028 @@
+*----------------------------------------------------------------------*
+*  Report  ZETEM_AF_PSD                                                *
+*----------------------------------------------------------------------*
+report ZETEM_AF_PSD no standard page heading
+                    message-id Z1
+                    line-count 65
+                    line-size 116.
+
+*----- tables
+tables: ZETEM_AF_LEGDOC,
+        VBAP,
+        VBEP,
+        VBUP,
+        VBRK,
+        VBRP,
+        VBFA,
+        KNA1,
+        MSKA,
+        LIPS,
+        VBPA,
+*******Andrej changes 27.05.2021***START****
+        vbak,
+*******Andrej changes 27.05.2021***END****
+        T685B.
+
+*-- ALV DATA
+type-pools: SLIS.
+data: COL_POS type I,
+      FIELDCAT      type SLIS_T_FIELDCAT_ALV,
+      FIELDCAT_LN   like line of FIELDCAT,
+      SORTCAT       type SLIS_T_SORTINFO_ALV,
+      SORTCAT_LN    like line of SORTCAT,
+      EVENTCAT      type SLIS_T_EVENT,
+      LAYOUT        type SLIS_LAYOUT_ALV,
+      EVENTCAT_LN   like line of EVENTCAT ,
+      HEADING       type SLIS_T_LISTHEADER ,
+      G_VARIANT     like DISVARIANT ,
+      GX_VARIANT    like DISVARIANT ,
+      DISPLAY_MODE,
+*@EP Avoid overflow errors. <
+      SER_NO type P,
+*@EP >
+      CNAME         like USR41-TERMINAL ,
+      G_SAVE(1)     type C, G_EXIT(1) type C,
+      GTITLE(100)   type C,
+      MOBJECT       like INRI-OBJECT,
+      INFO          like NRIV,
+      LISTHEADER    type SLIS_T_LISTHEADER,
+      LISTHEADER_LN like line of  LISTHEADER,
+
+*******Andrej changes 27.05.2021***START****
+      desc_text          TYPE c.
+*******Andrej changes 27.05.2021***END****
+
+*---- data
+types: begin of TYP_LEGDOC,
+         SEL(1),
+         POSTDATE   like ZETEM_AF_LEGDOC-POSTDATE,
+         SAPDOC     like ZETEM_AF_LEGDOC-SAPDOC,
+         LEGALDOC   like ZETEM_AF_LEGDOC-LEGALDOC,
+         KUNNR      like KNA1-KUNNR,
+         NAME1      like KNA1-NAME1,
+         WERKS      like ZETEM_AF_LEGDOC-WERKS,
+         KAPPL   like ZETEM_AF_LEGDOC-KAPPL,
+         KSCHL      like ZETEM_AF_LEGDOC-KSCHL,
+         OBJECT     like ZETEM_AF_LEGDOC-OBJECT,
+         NRRANGENR  like ZETEM_AF_LEGDOC-NRRANGENR,
+         CHNG_LD,
+         GJAHR      like ZETEM_AF_LEGDOC-GJAHR,
+         OLD_LEGDOC like ZETEM_AF_LEGDOC-LEGALDOC,
+         NETWR      like VBRK-NETWR,
+         FKART      like VBRK-FKART,
+         text(25),
+         augru      like vbak-augru,
+      end of TYP_LEGDOC.
+
+data : MSG_KAPPL like  NAST-KAPPL,
+       MSG_KSCHL like  NAST-KSCHL,
+       MSG_OBJKY like  NAST-OBJKY.
+
+data: T_LEGDOC type TYP_LEGDOC occurs 0 with header line.
+data: B_LEGDOC type TYP_LEGDOC occurs 0 with header line.
+
+constants: C_DELIVERY like VBFA-VBTYP_V value 'J',
+           C_AGREED like KONV-STUNR value '010'.
+
+*HKOEV declarate data for VAT reason BG
+
+data: begin of LS_REASON,
+      PVAT(80) type C,
+      end of LS_REASON,
+      LT_REASON like table of LS_REASON,
+
+      begin of LS_XEGLD,
+        VBELN like VBRK-VBELN,
+        XEGLD type XEGLD,
+        LAND1 type LAND1,
+      end of LS_XEGLD,
+
+      LT_XEGLD like table of LS_XEGLD,
+      LT_ZVATREASONBG type table of ZVATREASONBG with header line,
+      LV_NUMC(10) type C,
+      LV_NUM type P,
+      LV_TABIX like SY-TABIX,
+      lv_werks like vbrp-werks.
+
+
+type-pools: VRM.
+
+data: NAME  type VRM_ID,
+      LIST  type VRM_VALUES,
+      VALUE like line of LIST.
+
+data: LS_HEADER type THEAD,
+      LT_ITEMS type table of TLINE  with header line .
+
+* End of HKOEV
+
+*----------------------------------------------------------------------*
+*                    SELECTION SCREEN DECLARATION                      *
+*----------------------------------------------------------------------*
+selection-screen begin of block GENERAL with frame title TEXT-000.
+parameters : S_BUKRS like T001-BUKRS obligatory     " company code
+                                     memory id BUK.
+select-options : S_WERKS for VBRP-WERKS.         " Plant
+select-options : S_FKART for VBRK-FKART.             " Billing types
+select-options : S_VBELN for VBRK-VBELN              " Billing docs
+                                     memory id VF.
+select-options : S_FKDAT for VBRK-FKDAT.             " Billing date
+parameters S_DATE as checkbox.
+selection-screen end of block GENERAL.
+
+
+selection-screen begin of block B2 with frame title TEXT-001.
+parameters     : R_OFFI radiobutton group RADI default 'X'.
+parameters     : R_TEST radiobutton group RADI.
+parameters     : R_REPR radiobutton group RADI.
+*PARAMETERS     : r_hand RADIOBUTTON GROUP radi.
+*PARAMETERS     : p_handno LIKE ZETEM_AF_LEGDOC-sapdoc.
+selection-screen end of block B2.
+*@dt20140606 electronic invoice <
+selection-screen begin of block B4 with frame title TEXT-003.
+parameters : P_EMAIL type XFLAG default ' ' no-display.
+selection-screen end of block B4.
+*@dt20140606 electronic invoice >
+selection-screen begin of block B3 with frame title TEXT-002.
+parameters : PCOMMENT(80) type C.
+* HKOEV - add field for BG VAT reason cc 8400 8500
+parameters : PVAT type ZOPTYP as listbox visible length 20
+ modif id 001 default 'G'. "HKOEV
+*HKOEV end
+selection-screen end of block B3.
+
+
+selection-screen skip.
+
+parameters     : P_ORIG as checkbox.
+
+
+*------------------------0002-------------------------------------------
+selection-screen begin of screen 0002 as window title TEXT-I09.
+
+selection-screen begin of block B9 with frame title TEXT-B09.
+
+parameters: P_LEGDOC   like ZETEM_AF_LEGDOC-LEGALDOC.
+
+selection-screen end of block B9.
+selection-screen end of screen 0002.
+
+*----------------------------------------------------------------------*
+*                       EVENTS AT SELECTION SCREEN                     *
+*----------------------------------------------------------------------*
+initialization.
+
+
+at selection-screen.
+*Not allowed-Requested by Mircea 26.04.2013
+  if S_BUKRS = '9840'.
+    if P_ORIG = 'X'.
+      message E398(00) with TEXT-E03.
+    endif.
+  endif.
+
+*  IF r_hand = 'X' AND p_handno IS INITIAL.
+*    MESSAGE e099(zsd) WITH text-e01.
+*  ENDIF.
+*
+*  IF r_hand = ' ' AND NOT p_handno IS INITIAL.
+*    MESSAGE e099(zsd) WITH text-e02.
+*  ENDIF.
+
+at selection-screen output.
+* HKOEV generate listbox
+  if S_BUKRS eq '8500' or S_BUKRS eq '8000' or  S_BUKRS eq '8200' or
+     S_BUKRS eq '8400' or S_BUKRS eq '8700'.
+
+    loop at screen.
+      if SCREEN-GROUP1 = 001 .
+        SCREEN-ACTIVE = '1'.
+      endif.
+      modify screen.
+    endloop.
+  else.
+
+    loop at screen.
+      if SCREEN-GROUP1 = 001 .
+        SCREEN-ACTIVE = '0'.
+      endif.
+      modify screen.
+    endloop.
+  endif.
+
+**  NAME = 'PVAT'.
+**  clear LIST.
+**  VALUE-TEXT = 'Goods'.
+**  VALUE-KEY = 'G'.
+**  append VALUE to LIST.
+**  VALUE-TEXT = 'Services'.
+**  VALUE-KEY = 'S'.
+**  append VALUE to LIST.
+**  VALUE-TEXT = 'Triangle operation'.
+**  VALUE-KEY = 'T'.
+**  append VALUE to LIST.
+**
+**
+**  call function 'VRM_SET_VALUES'
+**    exporting
+**      ID     = NAME
+**      VALUES = LIST.
+
+*End of HKOEV
+
+
+*------------- main
+start-of-selection.
+
+  perform GET_DATA.
+
+end-of-selection.
+
+  check not T_LEGDOC[] is initial.
+
+  if P_EMAIL = 'X'. "for electronic invoice
+    perform CLOSE_ORDERS.
+  else.
+    do.
+      perform DISPLAY_DATA.
+      if DISPLAY_MODE = ' '.
+        exit.
+      else.
+        DISPLAY_MODE = ' '.
+      endif.
+
+    enddo.
+  endif.
+
+*---------------------------------------------------------------------*
+*       FORM process_vbap                                             *
+*---------------------------------------------------------------------*
+form GET_DATA.
+  data: NAME1(40), NAME2(40).
+  data: UKURS      like TCURR-UKURS.
+  data: DEL_WEIGHT like LIPS-NTGEW .
+  data: LS_STXL type STXL.
+  data: LS_STXH type STXH.
+
+
+  clear : T_LEGDOC, T_LEGDOC[].
+  select * from ZETEM_AF_LEGDOC where DOCUCATEG = 'B'
+                                and SAPDOC    in S_VBELN
+                                and BUKRS     = S_BUKRS
+                                and WERKS     in S_WERKS
+                                and POSTDATE  in S_FKDAT.
+
+
+
+if s_bukrs eq '8500' or S_BUKRS eq '8000' or S_BUKRS eq '8200'
+   or s_bukrs eq '8700'.
+ select single * from vbrk where vbeln = ZETEM_AF_LEGDOC-SAPDOC
+                          and zchech eq 'X'.
+  if sy-subrc eq 0.
+    clear: zetem_af_legdoc.
+  endif.
+endif.
+
+    if R_TEST = ' '.
+      if R_REPR = 'X'.
+        check ZETEM_AF_LEGDOC-LEGALDOC ne ' '.
+      else.
+        check ZETEM_AF_LEGDOC-LEGALDOC eq ' '.
+      endif.
+      check ZETEM_AF_LEGDOC-LEGALDOC ne 'CANCELED'.
+    endif.
+
+    clear T_LEGDOC.
+    move-corresponding ZETEM_AF_LEGDOC to T_LEGDOC.
+
+    clear VBRK.
+    select single * from VBRK
+      where VBELN = ZETEM_AF_LEGDOC-SAPDOC.
+    T_LEGDOC-FKART = VBRK-FKART.
+    T_LEGDOC-NETWR = VBRK-NETWR.
+
+
+***********Andrej changes 27.05.2021*********START**********
+    SELECT single * from vbak
+      WHERE VBELN = ZETEM_AF_LEGDOC-SAPDOC.
+    T_LEGDOC-AUGRU = VBAK-AUGRU.
+
+
+***********      IF vbak-augru = '100' OR vbak-augru = '111' OR vbak-augru = '19'  OR vbak-augru = '167' OR vbak-augru = '155' OR vbak-augru = '155'   OR
+***********         vbak-augru = '152' OR vbak-augru = '153' OR vbak-augru = '32'  OR vbak-augru = '21'  OR vbak-augru = '173' OR vbak-augru = 'v06'   OR
+***********         vbak-augru = '27'  OR vbak-augru = '114' OR vbak-augru = '157' OR vbak-augru = '161' OR vbak-augru = '20'  OR vbak-augru = '24'    OR
+***********         vbak-augru = '26'  OR vbak-augru = '112' OR vbak-augru = '151' OR vbak-augru = '200'.
+***********        IF vbak-vtweg = '10'.
+***********           t_legdoc-text = 'Промяна на данъчна основа'.
+***********        ENDIF.
+***********        IF vbak-vtweg = '20'.
+***********           t_legdoc-text = 'Tax base change'.
+***********        ENDIF.
+***********        ENDIF.
+*
+*      ELSEIF vbak-augru = '106' OR vbak-augru = '29' OR vbak-augru = '160' OR vbak-augru = '172' OR vbak-augru = '107' OR
+*             vbak-augru = '169' OR vbak-augru = '17' OR vbak-augru = '22'.
+*         IF vbak-vtweg = '10'.
+*           t_legdoc-text = 'Разваляне на доставка'.
+*         ENDIF.
+*         IF vbak-vtweg = '20'.
+*           t_legdoc-text = 'Cancellation of a delivery'.
+*         ENDIF.
+*
+*      ELSEIF vbak-vtweg = '170' OR vbak-vtweg = '154'.
+*         IF vbak-vtweg = '10'.
+*           t_legdoc-text = 'Промяна в количеството'.
+*         ENDIF.
+*         IF vbak-vtweg = '20'.
+*           t_legdoc-text = 'Quantity change'.
+*         ENDIF.
+*      ENDIF.
+
+
+*        desc_text = t_legdoc-text.
+
+**********Andrej changes 27.05.2021****END***************
+
+
+
+    clear VBPA.
+    select single * from VBPA
+      where VBELN = ZETEM_AF_LEGDOC-SAPDOC
+        and POSNR = '000000'
+        and PARVW = 'RE'.
+
+    clear KNA1.
+    select single * from KNA1 where KUNNR = VBPA-KUNNR.
+
+    if R_REPR = ' ' and R_TEST = ' '.
+      if VBRK-FKART(3) eq 'ZKL' and VBRK-VKORG = '9840' .
+        "do nothing.
+      else.
+        clear : INFO, SER_NO.
+        MOBJECT = ZETEM_AF_LEGDOC-OBJECT.
+        call function 'NUMBER_GET_INFO'
+          exporting
+            NR_RANGE_NR        = ZETEM_AF_LEGDOC-NRRANGENR
+            OBJECT             = MOBJECT
+            TOYEAR             = VBRK-ERDAT(4)
+          importing
+            INTERVAL           = INFO
+          exceptions
+            INTERVAL_NOT_FOUND = 1
+            OBJECT_NOT_FOUND   = 2
+            others             = 3.
+
+        SER_NO = INFO-NRLEVEL + 1.
+        T_LEGDOC-LEGALDOC = SER_NO.
+* save old legdoc number before concatenation
+        T_LEGDOC-OLD_LEGDOC = T_LEGDOC-LEGALDOC.
+*      CONCATENATE ZETEM_AF_LEGDOC-nrrangenr+1(1)
+*      t_legdoc-legaldoc INTO t_legdoc-legaldoc.
+      endif.
+    endif.
+*    IF p_handno IS NOT INITIAL.
+*      t_legdoc-legaldoc = p_handno.
+*    ENDIF.
+    T_LEGDOC-KUNNR = KNA1-KUNNR.
+    T_LEGDOC-NAME1 = KNA1-NAME1.
+    append T_LEGDOC.
+
+  endselect.
+
+  BREAK CCC00078 .
+
+
+* HKOEV add VAT reason in invoice notes
+
+  if S_BUKRS eq '8500' or S_BUKRS eq '8000' or S_BUKRS eq '8200' or
+     S_BUKRS eq '8400' or S_BUKRS eq '8700'.
+    select VBRK~VBELN
+           T005~XEGLD
+           T005~LAND1
+                from VBRK
+                 inner join KNA1 on VBRK~KUNAG eq KNA1~KUNNR
+                 inner join T005 on KNA1~LAND1 eq T005~LAND1
+            into corresponding fields of table LT_XEGLD
+        where VBRK~BUKRS eq S_BUKRS
+          and VBRK~VBELN in S_VBELN
+          and KNA1~LAND1 ne 'BG'.
+
+    LS_HEADER-TDOBJECT = 'VBBK'.
+
+    select * from ZVATREASONBG into corresponding fields of table LT_ZVATREASONBG .
+
+    loop at LT_XEGLD into LS_XEGLD where LAND1 ne 'BG'.
+"@dt20151126 Not for DB senger plant
+      clear lv_werks.
+      select single werks from vbrp
+             into lv_werks
+             where vbeln = ls_xegld-vbeln.
+
+     if lv_werks = '8591' or lv_werks = '8091' or lv_werks = '8291'
+       or lv_werks = '8791'.
+       continue.
+     endif.
+"@dt20151126 Not for DB senger plant
+     LV_TABIX = SY-TABIX.
+
+* Check is there existing text into invoice texts
+      select single * from STXH into LS_STXH
+            where TDNAME eq LS_XEGLD-VBELN
+              and TDOBJECT eq 'VBBK'.
+
+      select single * from STXL into LS_STXL
+            where TDNAME eq LS_XEGLD-VBELN
+              and tdid eq 'ZBH4'.
+      LS_HEADER-TDID = 'ZBH4'.
+      LS_HEADER-TDNAME = LS_XEGLD-VBELN .
+      LS_HEADER-TDSPRAS = 'E'.
+
+      clear: LT_ITEMS, LT_ITEMS[].
+      loop at LT_ZVATREASONBG
+              where ZOPTYP eq PVAT
+                and XEGLD eq LS_XEGLD-XEGLD.
+        LT_ITEMS-TDLINE = LT_ZVATREASONBG-TEXT .
+        append LT_ITEMS .
+        clear LT_ITEMS.
+      endloop.
+
+      delete adjacent duplicates from LT_ITEMS[] comparing all fields.
+
+      call function 'SAVE_TEXT'
+        exporting
+          CLIENT                = SY-MANDT
+          HEADER                = LS_HEADER
+          INSERT                = ' '
+          SAVEMODE_DIRECT       = 'X'
+        tables
+          LINES                 = LT_ITEMS[].
+      if SY-SUBRC <> 0.
+* MESSAGE ID SY-MSGID TYPE SY-MSGTY NUMBER SY-MSGNO
+*         WITH SY-MSGV1 SY-MSGV2 SY-MSGV3 SY-MSGV4.
+      endif.
+      delete LT_XEGLD index LV_TABIX.
+    endloop.
+  endif.
+  "END HKOEV
+
+endform.                    "get_data
+
+*---------------------------------------------------------------------*
+*       FORM display_data                                             *
+*---------------------------------------------------------------------*
+form DISPLAY_DATA.
+  data : NA(1) value SPACE .
+  data: N_OUT type P.
+  sort T_LEGDOC.
+
+* ref_tabname ref_fieldname  tabname  fieldname
+  clear  FIELDCAT[].
+  perform ALV_BUILD_FIELDCAT using 'ZETEM_AF_LEGDOC' 'POSTDATE'
+                                   'T_LEGDOC'      'POSTDATE'
+  ' '   TEXT-T02   'X'    NA      NA    NA   NA NA NA.
+
+  perform ALV_BUILD_FIELDCAT using 'ZETEM_AF_LEGDOC' 'SAPDOC'
+                                   'T_LEGDOC'      'SAPDOC'
+  ' '   TEXT-T03   'X'    NA      NA    NA   NA NA NA.
+
+  perform ALV_BUILD_FIELDCAT using 'ZETEM_AF_LEGDOC' 'LEGALDOC'
+                                   'T_LEGDOC'      'LEGALDOC'
+  ' '   TEXT-T10   'X'    NA      NA    NA   NA NA NA.
+
+  perform ALV_BUILD_FIELDCAT using 'KNA1'     'KUNNR'
+                                   'T_LEGDOC' 'KUNNR'
+  ' '   TEXT-T04     ' '    NA      NA    NA   NA NA 'X'.
+
+  perform ALV_BUILD_FIELDCAT using 'KNA1'     'NAME1'
+                                   'T_LEGDOC' 'NAME1'
+  ' '   TEXT-T05     ' '    NA      NA    NA   NA NA 'X'.
+
+  perform ALV_BUILD_FIELDCAT using 'ZIT_RO_WERKS' 'WERKS'
+                                    'T_LEGDOC'      'WERKS'
+   ' '   TEXT-T09   ' '    NA      NA    NA   NA NA NA.
+
+  perform ALV_BUILD_FIELDCAT using 'ZETEM_AF_LEGDOC' 'KSCHL'
+                                   'T_LEGDOC'      'KSCHL'
+  ' '   TEXT-T06   ' '    NA      NA    NA   NA NA NA.
+
+  perform ALV_BUILD_FIELDCAT using 'ZETEM_AF_LEGDOC' 'OBJECT'
+                                   'T_LEGDOC'      'OBJECT'
+  ' '   TEXT-T07   'X'    NA      NA    NA   NA NA NA.
+
+  perform ALV_BUILD_FIELDCAT using 'ZETEM_AF_LEGDOC' 'NRRANGENR'
+                                   'T_LEGDOC'      'NRRANGENR'
+  ' '   TEXT-T08   ' '    NA      NA    NA   NA NA NA.
+
+  perform ALV_BUILD_FIELDCAT using 'VBRK' 'FKART' 'T_LEGDOC' 'FKART'
+  ' '   TEXT-T15   ' '    NA      NA    NA   NA NA NA.
+  perform ALV_BUILD_FIELDCAT using 'VBRK' 'NETWR' 'T_LEGDOC' 'NETWR'
+  ' '   TEXT-T16   ' '    NA      NA    NA   NA NA NA.
+
+  perform ALV_SORT using '1' 'POSTDATE' 'X' ' ' 'X'.
+  perform ALV_BUILD_LAYOUT using LAYOUT.
+  perform ALV_BUILD_EVENT_CATALOG.
+  perform ALV_START_VIEWER.
+
+endform.                    " extra_function
+
+
+*----------------------------------------------------------------------*
+*                          Form  close_orders                          *
+*----------------------------------------------------------------------*
+form CLOSE_ORDERS.
+  data: F_SUBRC like SY-SUBRC.
+  data P_TEST.
+
+*@DT20140606 electronic invoice
+  if P_EMAIL = 'X'.
+    data: TO_EMAIL type C,
+          BGEINV.
+    TO_EMAIL = P_EMAIL.
+    export TO_EMAIL to memory id 'ZBGMAIL'.
+    if R_REPR = 'X'.
+
+      BGEINV = 'X'.
+      export BGEINV to memory id 'ZBGPREIN'.
+    endif.
+
+  endif.
+
+  clear P_TEST.
+  clear VBRK.
+  select single * from VBRK where VBELN = T_LEGDOC-SAPDOC.
+
+  check SY-SUBRC = 0.
+
+  if R_OFFI ne 'X'.
+*    IF r_hand NE 'X'.
+    P_TEST = 'X'.
+*    ENDIF.
+  endif.
+
+  if R_TEST eq 'X'.
+    P_TEST = 'X'.
+  endif.
+
+  if P_TEST = ' '.
+    if T_LEGDOC-CHNG_LD ne 'X'.
+      clear T_LEGDOC-LEGALDOC.
+    endif.
+  endif.
+
+  perform CALL_PRINTING_PROCEDURE in program ZETEM_AF_TIM
+                                  using VBRK-BUKRS
+                                        VBRK-VBELN
+                                        VBRK-FKART
+                                        VBRK-FKDAT
+                                        T_LEGDOC-WERKS
+                                        T_LEGDOC-LEGALDOC
+                                        S_DATE
+                                        P_TEST
+                                        R_REPR
+                                        P_ORIG
+*                                        r_hand
+*                                        p_handno
+                                        T_LEGDOC-OLD_LEGDOC.
+
+
+
+endform.                    " close_orders
+
+*********************************************************************
+****                    FORMS FOR ALV LIST                          ****
+************************************************************************
+*---------------------------------------------------------------------*
+*       FORM alv_build_event_catalog                                  *
+*---------------------------------------------------------------------*
+*       ........                                                      *
+*---------------------------------------------------------------------*
+form ALV_BUILD_EVENT_CATALOG.
+
+  clear EVENTCAT_LN.
+  call function 'REUSE_ALV_EVENTS_GET'
+    exporting
+      I_LIST_TYPE = 0
+    importing
+      ET_EVENTS   = EVENTCAT.
+
+
+* TOP-OF-PAGE
+  read table EVENTCAT with key NAME =  SLIS_EV_TOP_OF_PAGE
+                          into EVENTCAT_LN.
+  if SY-SUBRC = 0.
+    move 'TOP_OF_PAGE' to EVENTCAT_LN-FORM.
+    append EVENTCAT_LN to EVENTCAT.
+  endif.
+
+* SET_PF_STATUS
+  read table EVENTCAT with key NAME =  SLIS_EV_PF_STATUS_SET
+                          into EVENTCAT_LN.
+  if SY-SUBRC = 0.
+    move 'SET_PF_STATUS' to EVENTCAT_LN-FORM.
+    append EVENTCAT_LN to EVENTCAT.
+  endif.
+
+* AT_USER_COMMAND
+  read table EVENTCAT with key NAME =  SLIS_EV_USER_COMMAND
+                          into EVENTCAT_LN.
+  if SY-SUBRC = 0.
+    move 'AT_USER_COMMAND' to EVENTCAT_LN-FORM.
+    append EVENTCAT_LN to EVENTCAT.
+  endif.
+
+endform.                    " build_event_catalog
+
+*---------------------------------------------------------------------*
+*       FORM top_of_page                                              *
+*---------------------------------------------------------------------*
+*       ........                                                      *
+*---------------------------------------------------------------------*
+form TOP_OF_PAGE.
+
+  clear: LISTHEADER_LN, LISTHEADER[].
+  move 'Selection:' to LISTHEADER_LN-KEY.
+  if not S_DATE is initial.
+    concatenate LISTHEADER_LN-INFO 'Print Docs of a past date:,  '
+                into LISTHEADER_LN-INFO.
+  endif.
+  if not R_OFFI is initial.
+    concatenate LISTHEADER_LN-INFO 'Official print,'
+                into LISTHEADER_LN-INFO.
+  elseif not R_TEST is initial.
+    concatenate LISTHEADER_LN-INFO 'Test print,'
+                into LISTHEADER_LN-INFO.
+  elseif not R_REPR is initial.
+    concatenate LISTHEADER_LN-INFO 'Reprint,'
+                into LISTHEADER_LN-INFO.
+*  elseif not r_hand is initial.
+*    concatenate listheader_ln-INFO 'HandWritten,'
+*                into listheader_ln-info.
+  endif.
+
+
+  LISTHEADER_LN-TYP  = 'S'.
+*  listheader_ln-key  = text-h01.
+  append LISTHEADER_LN to LISTHEADER.
+
+  call function 'REUSE_ALV_COMMENTARY_WRITE'
+    exporting
+      IT_LIST_COMMENTARY = LISTHEADER.
+
+
+endform.                    "top_of_page
+
+*---------------------------------------------------------------------*
+*       FORM alv_build_fieldcat                                       *
+*---------------------------------------------------------------------*
+form ALV_BUILD_FIELDCAT using REF_TABNAME
+                          REF_FIELDNAME TABNAME FIELDNAME
+                          KEY FTEXT HOTSPOT OUTLEN
+                          ICON JUST DOSUM DECS NOZERO.
+
+  add 1 to COL_POS.
+  FIELDCAT_LN-REF_TABNAME      = REF_TABNAME.
+  FIELDCAT_LN-REF_FIELDNAME    = REF_FIELDNAME.
+  FIELDCAT_LN-TABNAME      = TABNAME.
+  FIELDCAT_LN-FIELDNAME    = FIELDNAME.
+  FIELDCAT_LN-KEY          = KEY.
+  FIELDCAT_LN-COL_POS      = COL_POS.
+  FIELDCAT_LN-NO_OUT       = ' '.
+  FIELDCAT_LN-NO_ZERO       = NOZERO.
+  FIELDCAT_LN-SELTEXT_L   = FTEXT.
+  FIELDCAT_LN-DDICTXT = 'L'.     " (S)hort (M)iddle (L)ong
+  FIELDCAT_LN-HOTSPOT      = HOTSPOT.
+  FIELDCAT_LN-OUTPUTLEN    = OUTLEN.
+  FIELDCAT_LN-ICON          = ICON.
+  FIELDCAT_LN-JUST          = JUST.
+  FIELDCAT_LN-DO_SUM        = DOSUM.
+  if not DECS = SPACE.
+    FIELDCAT_LN-DECIMALS_OUT  = DECS.
+  endif.
+  append FIELDCAT_LN to FIELDCAT.
+endform.                    "alv_build_fieldcat
+
+*----------------------------------------------------------------------*
+*        FORM alv_build_layout                                         *
+*----------------------------------------------------------------------*
+form ALV_BUILD_LAYOUT  using E05_LS_LAYOUT type SLIS_LAYOUT_ALV.
+
+  E05_LS_LAYOUT-ZEBRA               = 'X'.
+  E05_LS_LAYOUT-NUMC_SUM            = 'X'.  "x
+  E05_LS_LAYOUT-DETAIL_POPUP        = 'X'. "x
+  E05_LS_LAYOUT-COLWIDTH_OPTIMIZE   = 'X'.
+  E05_LS_LAYOUT-GET_SELINFOS        = 'X'. "x
+  E05_LS_LAYOUT-CONFIRMATION_PROMPT = SPACE.
+  E05_LS_LAYOUT-TOTALS_TEXT         = TEXT-T10.
+  E05_LS_LAYOUT-SUBTOTALS_TEXT      = TEXT-S02.
+  E05_LS_LAYOUT-TOTALS_ONLY         = ' '.
+  E05_LS_LAYOUT-NO_KEYFIX           = SPACE.
+  E05_LS_LAYOUT-BOX_FIELDNAME       = 'SEL'.
+  E05_LS_LAYOUT-BOX_TABNAME         = T_LEGDOC.
+
+endform.                    "alv_build_layout
+
+*---------------------------------------------------------------------*
+*       FORM alv_start_viewer                                         *
+*---------------------------------------------------------------------*
+form ALV_START_VIEWER.
+
+  data: PGM like SY-REPID.
+  PGM = SY-REPID.
+  GTITLE = PGM.
+
+  call function 'REUSE_ALV_GRID_DISPLAY'
+    exporting
+**      I_INTERFACE_CHECK        = 'X'
+      I_CALLBACK_PROGRAM       = PGM
+      I_CALLBACK_PF_STATUS_SET = 'SET_PF_STATUS'
+      I_CALLBACK_USER_COMMAND  = 'AT_USER_COMMAND'
+      IS_LAYOUT                = LAYOUT
+      IT_FIELDCAT              = FIELDCAT
+      IT_SORT                  = SORTCAT
+      I_SAVE                   = 'A'
+      IT_EVENTS                = EVENTCAT[]
+    tables
+      T_OUTTAB                 = T_LEGDOC
+    exceptions
+      PROGRAM_ERROR            = 1
+      others                   = 2.
+endform.                    "alv_start_viewer
+
+*---------------------------------------------------------------------*
+*       FORM header_list                                              *
+*---------------------------------------------------------------------*
+form ALV_HEADER_LIST.
+
+  data: W_TXT1(60), W_TXT2(50),W_TXT3(50), W_TXT4(50), W_TXT5(50).
+  data: W_INFO like LISTHEADER_LN-INFO.
+
+  clear: LISTHEADER_LN, W_INFO, LISTHEADER[].
+
+  LISTHEADER_LN-TYP  = 'S'.
+  LISTHEADER_LN-KEY  = TEXT-S01.
+  LISTHEADER_LN-INFO = SER_NO.
+  append LISTHEADER_LN to LISTHEADER.
+
+endform.                    " HEADER_LIST
+
+*----------------------------------------------------------------------*
+*       text
+*----------------------------------------------------------------------*
+form ALV_FCAT_MERGE using P_TABNAME P_REPID.
+*
+  call function 'REUSE_ALV_FIELDCATALOG_MERGE'
+    exporting
+      I_PROGRAM_NAME         = P_REPID
+      I_INTERNAL_TABNAME     = P_TABNAME
+      I_INCLNAME             = P_REPID
+      I_BYPASSING_BUFFER     = 'X'
+      I_BUFFER_ACTIVE        = SPACE
+    changing
+      CT_FIELDCAT            = FIELDCAT
+    exceptions
+      INCONSISTENT_INTERFACE = 1
+      PROGRAM_ERROR          = 2
+      others                 = 3.
+
+  if SY-SUBRC <> 0.
+    message id SY-MSGID type SY-MSGTY number SY-MSGNO
+           with SY-MSGV1 SY-MSGV2 SY-MSGV3 SY-MSGV4.
+  endif.
+
+endform.                    " alv_fcat_merge
+
+*---------------------------------------------------------------------*
+*       FORM alv_sort                                                 *
+*---------------------------------------------------------------------*
+form ALV_SORT using SPOS
+                    FLDN
+                    LUP
+                    LDWN
+                    STOT.
+
+  clear SORTCAT_LN.
+  SORTCAT_LN-SPOS      = SPOS.
+  SORTCAT_LN-FIELDNAME = FLDN.
+  SORTCAT_LN-UP        = LUP.
+  SORTCAT_LN-DOWN      = LDWN.
+  SORTCAT_LN-SUBTOT    = STOT.
+
+  append  SORTCAT_LN to SORTCAT.
+
+endform.                    " alv_sort
+
+*---------------------------------------------------------------------*
+*       FORM SET_PF_STATUS                                            *
+*---------------------------------------------------------------------*
+form SET_PF_STATUS using RT_EXTAB type SLIS_T_EXTAB.
+  data EXCLUD type SLIS_EXTAB.
+
+  free: RT_EXTAB .
+  if R_OFFI = ' '.
+    EXCLUD-FCODE = 'CANCEL'.
+  endif.
+  append EXCLUD to RT_EXTAB.
+  set pf-status 'ZST9' excluding RT_EXTAB .
+
+endform.                    "set_pf_status
+
+*----------------------------------------------------------------------*
+*                     Form  AT_USER_COMMAND                            *
+*----------------------------------------------------------------------*
+form AT_USER_COMMAND using R_UCOMM like SY-UCOMM
+                        RS_SELFIELD type SLIS_SELFIELD.     "#EC CALLED
+
+  data : ANS.
+  data : LIN type I,
+         XFIELD.
+
+
+  case R_UCOMM.
+    when '&IC1'.
+      case RS_SELFIELD-FIELDNAME .
+        when 'SAPDOC'.
+          set parameter id 'VF' field RS_SELFIELD-VALUE .
+          call transaction 'VF03' and skip first screen.
+          set parameter id 'VF' field SPACE .
+        when 'KUNNR'.
+          set parameter id 'KUN' field RS_SELFIELD-VALUE .
+          set parameter id 'BUK' field S_BUKRS.
+          call transaction 'FD03' and skip first screen.
+          set parameter id 'KUN' field SPACE .
+          set parameter id 'BUK' field SPACE .
+        when 'LEGALDOC'.
+          check R_REPR ne 'X'.
+          write: RS_SELFIELD-VALUE to P_LEGDOC.
+          call selection-screen 0002 starting at 20 10.
+          if SY-SUBRC <> 0.
+            exit.
+          endif.
+          read table T_LEGDOC index RS_SELFIELD-TABINDEX.
+          if T_LEGDOC-LEGALDOC ne P_LEGDOC.
+            T_LEGDOC-LEGALDOC = P_LEGDOC.
+            T_LEGDOC-CHNG_LD  = 'X'.
+            modify T_LEGDOC index RS_SELFIELD-TABINDEX.
+            R_UCOMM = '&REFRESH'.
+          endif.
+        when others .
+      endcase.
+*
+    when 'PRINT'.
+      clear LIN.
+      loop at T_LEGDOC where SEL = 'X'.
+        LIN = LIN + 1.
+      endloop.
+      if SY-SUBRC = 0.
+        if LIN > 1.
+          call function 'POPUP_TO_INFORM'
+            exporting
+              TITEL = TEXT-W01
+              TXT1  = TEXT-W02
+              TXT2  = TEXT-W03.
+          exit.
+        endif.
+        call function 'POPUP_TO_CONFIRM'
+          exporting
+            TITLEBAR              = TEXT-T00
+            TEXT_QUESTION         = TEXT-T01
+            TEXT_BUTTON_1         = TEXT-T22
+            TEXT_BUTTON_2         = TEXT-T23
+            DEFAULT_BUTTON        = '2'
+            DISPLAY_CANCEL_BUTTON = ' '
+          importing
+            ANSWER                = ANS
+          exceptions
+            TEXT_NOT_FOUND        = 1
+            others                = 2.
+
+        if ANS = 1.
+          perform CLOSE_ORDERS.
+        endif.
+        describe table T_LEGDOC lines LIN.
+        if LIN ge 1.
+          perform GET_DATA.
+          if not T_LEGDOC[] is initial.
+            DISPLAY_MODE = 'X'.
+          endif.
+        endif.
+        leave to screen 0.
+
+      endif.
+*
+    when 'PRINT_PREV'.
+      loop at T_LEGDOC where SEL = 'X'.
+        MSG_KAPPL  = T_LEGDOC-KAPPL.
+        MSG_KSCHL  = T_LEGDOC-KSCHL.
+        MSG_OBJKY  = T_LEGDOC-SAPDOC.
+
+        if R_TEST = ' '.
+          if R_REPR = ' '.
+            XFIELD = 'O'.
+          else.
+            XFIELD = 'C'.
+          endif.
+        else.
+          XFIELD = 'T'.
+        endif.
+        if P_ORIG = 'X'.
+          XFIELD = 'O'.
+        endif.
+        set parameter id 'ZMOD' field XFIELD.
+
+        call function 'RV_MESSAGE_PREVIEW'
+          exporting
+            MSG_KAPPL             = MSG_KAPPL
+            MSG_KSCHL             = MSG_KSCHL
+            MSG_OBJKY             = MSG_OBJKY
+            MSG_DIALOG            = ' '
+          exceptions
+            CANCEL                = 1
+            MESSAGE_NOT_PRINTABLE = 2
+            NO_MESSAGE            = 3
+            PRINT_ERROR           = 4
+            others                = 5.
+        if SY-SUBRC <> 0.
+* MESSAGE ID SY-MSGID TYPE SY-MSGTY NUMBER SY-MSGNO
+*         WITH SY-MSGV1 SY-MSGV2 SY-MSGV3 SY-MSGV4.
+        endif.
+
+        clear XFIELD.
+        set parameter id 'ZMOD' field XFIELD.
+
+      endloop.
+
+*
+    when 'CANCEL'.
+      clear LIN.
+      loop at T_LEGDOC where SEL = 'X'.
+        LIN = LIN + 1.
+      endloop.
+      if SY-SUBRC = 0.
+        if LIN > 1.
+          call function 'POPUP_TO_INFORM'
+            exporting
+              TITEL = TEXT-W01
+              TXT1  = TEXT-W02
+              TXT2  = TEXT-W03.
+          exit.
+        endif.
+        call function 'POPUP_TO_CONFIRM'
+          exporting
+            TITLEBAR              = TEXT-T00
+            TEXT_QUESTION         = TEXT-T24
+            TEXT_BUTTON_1         = TEXT-T22
+            TEXT_BUTTON_2         = TEXT-T23
+            DEFAULT_BUTTON        = '2'
+            DISPLAY_CANCEL_BUTTON = ' '
+          importing
+            ANSWER                = ANS
+          exceptions
+            TEXT_NOT_FOUND        = 1
+            others                = 2.
+
+        if ANS = 1.
+          clear VBRK.
+          select single * from VBRK where VBELN = T_LEGDOC-SAPDOC.
+          check SY-SUBRC = 0.
+
+          if VBRK-FKSTO = ' ' and VBRK-SFAKN = ' '.
+            call function 'POPUP_TO_INFORM'
+              exporting
+                TITEL = TEXT-W04
+                TXT1  = TEXT-W05
+                TXT2  = TEXT-W06.
+            exit.
+          endif.
+
+          clear ZETEM_AF_LEGDOC.
+          select single * from ZETEM_AF_LEGDOC
+                          where DOCUCATEG = 'B'
+                            and SAPDOC    = T_LEGDOC-SAPDOC
+                            and GJAHR     = T_LEGDOC-GJAHR.
+
+          if SY-SUBRC = 0.
+            ZETEM_AF_LEGDOC-LEGALDOC  = 'CANCELED'.
+            ZETEM_AF_LEGDOC-XBLNRUPDT = ' '.
+            ZETEM_AF_LEGDOC-PRUSER    = SY-UNAME.
+            ZETEM_AF_LEGDOC-PRDATE    = SY-DATUM.
+            modify ZETEM_AF_LEGDOC.
+          else.
+            exit.
+          endif.
+
+        endif.
+*        DESCRIBE TABLE t_legdoc LINES lin.
+*        IF lin GE 1.
+*          PERFORM get_data.
+*          IF NOT t_legdoc[] IS INITIAL.
+*            display_mode = 'X'.
+*          ENDIF.
+*        ENDIF.
+        DISPLAY_MODE = ' '.
+        leave to screen 0.
+
+      endif.
+
+  endcase.
+
+endform.                    "at_user_command
